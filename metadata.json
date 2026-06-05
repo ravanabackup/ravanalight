@@ -1,0 +1,6 @@
+{
+  "name": "Ravana Light",
+  "description": "A system-wide media display and listener service built in Jetpack Compose and Android Media3.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
