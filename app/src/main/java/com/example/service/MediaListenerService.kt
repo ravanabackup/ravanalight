@@ -20,11 +20,14 @@ import com.example.MainActivity
 import com.example.state.MediaStateManager
 import com.example.state.PreferencesManager
 
+import android.media.session.MediaSession
+
 class MediaListenerService : NotificationListenerService() {
 
     private var isTrackingSetup = false
     private lateinit var mediaSessionManager: MediaSessionManager
     private val registeredControllers = mutableMapOf<String, MediaController>()
+    private var mediaSession: MediaSession? = null
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         updateControllers(controllers ?: emptyList())
@@ -43,6 +46,71 @@ class MediaListenerService : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        createNotificationChannel()
+        setupLocalMediaSession()
+    }
+
+    private fun setupLocalMediaSession() {
+        try {
+            mediaSession = MediaSession(this, "RavanaLightSession").apply {
+                isActive = true
+                setCallback(object : MediaSession.Callback() {
+                    override fun onPlay() {
+                        triggerPlayPause()
+                    }
+
+                    override fun onPause() {
+                        triggerPlayPause()
+                    }
+
+                    override fun onSkipToNext() {
+                        triggerNext()
+                    }
+
+                    override fun onSkipToPrevious() {
+                        triggerPrevious()
+                    }
+                })
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun updateLocalSessionState(isPlaying: Boolean, title: String?, artist: String?, albumArt: Bitmap?) {
+        val session = mediaSession ?: return
+        try {
+            if (title == null) {
+                val state = PlaybackState.Builder()
+                    .setState(PlaybackState.STATE_NONE, 0, 1.0f)
+                    .build()
+                session.setPlaybackState(state)
+                session.setMetadata(null)
+                return
+            }
+
+            val metaBuilder = MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist ?: "")
+            if (albumArt != null) {
+                metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, albumArt)
+            }
+            session.setMetadata(metaBuilder.build())
+
+            val rawState = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+            val stateBuilder = PlaybackState.Builder()
+                .setState(rawState, 0, 1.0f)
+                .setActions(
+                    PlaybackState.ACTION_PLAY or
+                    PlaybackState.ACTION_PAUSE or
+                    PlaybackState.ACTION_PLAY_PAUSE or
+                    PlaybackState.ACTION_SKIP_TO_NEXT or
+                    PlaybackState.ACTION_SKIP_TO_PREVIOUS
+                )
+            session.setPlaybackState(stateBuilder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     override fun onListenerConnected() {
@@ -68,6 +136,13 @@ class MediaListenerService : NotificationListenerService() {
     override fun onDestroy() {
         super.onDestroy()
         cleanupMediaSessionTracking()
+        try {
+            mediaSession?.isActive = false
+            mediaSession?.release()
+            mediaSession = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         MediaStateManager.updateServiceConnected(false)
         if (instance == this) {
             instance = null
@@ -227,6 +302,7 @@ class MediaListenerService : NotificationListenerService() {
                     packageName = ""
                 )
             )
+            updateLocalSessionState(false, null, null, null)
             val prefs = PreferencesManager(this)
             if (prefs.isListenerEnabled) {
                 showServiceNotification("No active media", "Waiting for playback...", false, null)
@@ -262,6 +338,9 @@ class MediaListenerService : NotificationListenerService() {
                 packageName = controller.packageName ?: ""
             )
         )
+
+        // Update local session state
+        updateLocalSessionState(isPlaying, title, artist, artBitmap)
 
         // Show/Update Notification
         showServiceNotification(title, artist, isPlaying, artBitmap)
@@ -359,9 +438,9 @@ class MediaListenerService : NotificationListenerService() {
         val mediaStyle = Notification.MediaStyle()
             .setShowActionsInCompactView(0, 1, 2)
 
-        val controller = getActiveController()
-        if (controller != null) {
-            mediaStyle.setMediaSession(controller.sessionToken)
+        val token = mediaSession?.sessionToken ?: getActiveController()?.sessionToken
+        if (token != null) {
+            mediaStyle.setMediaSession(token)
         }
 
         builder.setStyle(mediaStyle)
