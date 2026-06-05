@@ -70,6 +70,7 @@ secrets {
 dependencies {
   implementation(libs.androidx.media3.session)
   implementation(libs.androidx.media3.common)
+  implementation(libs.androidx.media3.exoplayer)
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)

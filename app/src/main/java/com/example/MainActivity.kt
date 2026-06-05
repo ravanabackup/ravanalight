@@ -143,6 +143,12 @@ fun RavanaLightDashboard(
     val prefs = remember { PreferencesManager(context) }
     var isListenerToggleEnabled by remember { mutableStateOf(prefs.isListenerEnabled) }
 
+    LaunchedEffect(Unit) {
+        if (prefs.isListenerEnabled) {
+            setServiceEnabledState(context, true)
+        }
+    }
+
     DisposableEffect(prefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "listener_enabled") {
