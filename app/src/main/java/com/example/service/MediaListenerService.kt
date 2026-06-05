@@ -27,6 +27,7 @@ class MediaListenerService : NotificationListenerService() {
     private var isTrackingSetup = false
     private lateinit var mediaSessionManager: MediaSessionManager
     private val registeredControllers = mutableMapOf<String, MediaController>()
+    var audioPlaybackManager: AudioPlaybackManager? = null
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         updateControllers(controllers ?: emptyList())
@@ -46,6 +47,11 @@ class MediaListenerService : NotificationListenerService() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        try {
+            audioPlaybackManager = AudioPlaybackManager(this)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
 
@@ -73,6 +79,12 @@ class MediaListenerService : NotificationListenerService() {
     override fun onDestroy() {
         super.onDestroy()
         cleanupMediaSessionTracking()
+        try {
+            audioPlaybackManager?.release()
+            audioPlaybackManager = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         MediaStateManager.updateServiceConnected(false)
         if (instance == this) {
             instance = null
@@ -185,6 +197,24 @@ class MediaListenerService : NotificationListenerService() {
     private fun updateActiveSession() {
         val controller = getActiveController()
         if (controller == null) {
+            val localPlaying = audioPlaybackManager?.isPlaying() ?: false
+            if (localPlaying) {
+                MediaStateManager.updateMediaInfo(
+                    MediaStateManager.MediaInfo(
+                        title = "Ravana Sound Suite",
+                        artist = "Active Sync Running",
+                        isPlaying = true,
+                        albumArt = null,
+                        packageName = packageName
+                    )
+                )
+                val prefs = PreferencesManager(this)
+                if (prefs.isListenerEnabled) {
+                    showServiceNotification("Ravana Sound Suite", "Active Sync Running", true, null)
+                }
+                return
+            }
+
             MediaStateManager.updateMediaInfo(
                 MediaStateManager.MediaInfo(
                     title = "No active media",
@@ -354,8 +384,36 @@ class MediaListenerService : NotificationListenerService() {
     }
 
     fun triggerPlayPause() {
-        val controller = getActiveController() ?: return
+        val controller = getActiveController()
+        if (controller == null) {
+            try {
+                audioPlaybackManager?.let { pm ->
+                    if (pm.isPlaying()) {
+                        pm.pause()
+                    } else {
+                        pm.play()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            updateActiveSession()
+            return
+        }
+
         try {
+            if (controller.packageName == packageName) {
+                audioPlaybackManager?.let { pm ->
+                    if (pm.isPlaying()) {
+                        pm.pause()
+                    } else {
+                        pm.play()
+                    }
+                }
+                updateActiveSession()
+                return
+            }
+
             val state = controller.playbackState?.state
             if (state == PlaybackState.STATE_PLAYING) {
                 controller.transportControls?.pause()
