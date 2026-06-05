@@ -155,61 +155,23 @@ class MediaListenerService : NotificationListenerService() {
         val action = intent?.action
         if (action != null) {
             val prefs = PreferencesManager(this)
-            if (action == ACTION_TOGGLE_LISTENER) {
-                if (prefs.isListenerEnabled) {
-                    setupMediaSessionTracking()
-                } else {
-                    cleanupMediaSessionTracking()
-                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    manager.cancel(NOTIFICATION_ID)
-                    stopSelf()
+            when (action) {
+                ACTION_TOGGLE_LISTENER -> {
+                    if (prefs.isListenerEnabled) {
+                        setupMediaSessionTracking()
+                        updateActiveSession()
+                    } else {
+                        cleanupMediaSessionTracking()
+                        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        manager.cancel(NOTIFICATION_ID)
+                    }
                 }
-            } else if (action == ACTION_TOGGLE_FROM_NOTIFICATION) {
-                val enabled = !prefs.isListenerEnabled
-                prefs.isListenerEnabled = enabled
-                
-                val componentName = ComponentName(this, MediaListenerService::class.java)
-                val state = if (enabled) {
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                } else {
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                ACTION_TOGGLE_FROM_NOTIFICATION -> {
+                    toggleListenerState(this, false)
                 }
-                try {
-                    packageManager.setComponentEnabledSetting(
-                        componentName,
-                        state,
-                        PackageManager.DONT_KILL_APP
-                    )
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                if (enabled) {
-                    setupMediaSessionTracking()
-                    updateActiveSession()
-                } else {
-                    cleanupMediaSessionTracking()
-                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    manager.cancel(NOTIFICATION_ID)
-                    
-                    MediaStateManager.updateMediaInfo(
-                        MediaStateManager.MediaInfo(
-                            title = "No active media",
-                            artist = "Waiting for playback...",
-                            isPlaying = false,
-                            albumArt = null,
-                            packageName = ""
-                        )
-                    )
-                    stopSelf()
-                }
-            } else {
-                // Handle playback controls
-                when (action) {
-                    ACTION_PLAY_PAUSE -> triggerPlayPause()
-                    ACTION_NEXT -> triggerNext()
-                    ACTION_PREV -> triggerPrevious()
-                }
+                ACTION_PLAY_PAUSE -> triggerPlayPause()
+                ACTION_NEXT -> triggerNext()
+                ACTION_PREV -> triggerPrevious()
             }
         }
         return START_STICKY
@@ -508,6 +470,34 @@ class MediaListenerService : NotificationListenerService() {
         const val ACTION_TOGGLE_FROM_NOTIFICATION = "com.amazon.mp3.ACTION_TOGGLE_FROM_NOTIFICATION"
 
         private var instance: MediaListenerService? = null
+
+        fun toggleListenerState(context: Context, enabled: Boolean) {
+            val prefs = PreferencesManager(context)
+            prefs.isListenerEnabled = enabled
+            
+            val srv = instance
+            if (srv != null) {
+                if (enabled) {
+                    srv.setupMediaSessionTracking()
+                    srv.updateActiveSession()
+                } else {
+                    srv.cleanupMediaSessionTracking()
+                    val manager = srv.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    manager.cancel(NOTIFICATION_ID)
+                    
+                    MediaStateManager.updateMediaInfo(
+                        MediaStateManager.MediaInfo(
+                            title = "No active media",
+                            artist = "Waiting for playback...",
+                            isPlaying = false,
+                            albumArt = null,
+                            packageName = ""
+                        )
+                    )
+                    srv.updateLocalSessionState(false, null, null, null)
+                }
+            }
+        }
 
         fun playPauseActiveSession() {
             instance?.triggerPlayPause()

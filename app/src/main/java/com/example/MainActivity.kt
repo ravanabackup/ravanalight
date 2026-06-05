@@ -143,6 +143,19 @@ fun RavanaLightDashboard(
     val prefs = remember { PreferencesManager(context) }
     var isListenerToggleEnabled by remember { mutableStateOf(prefs.isListenerEnabled) }
 
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "listener_enabled") {
+                isListenerToggleEnabled = prefs.isListenerEnabled
+            }
+        }
+        val sharedPrefs = context.getSharedPreferences("ravana_light_prefs", Context.MODE_PRIVATE)
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
     // Request standard notification permission on api 33+
     var hasPostNotificationPermission by remember {
         mutableStateOf(
@@ -1237,34 +1250,5 @@ fun LogsDashboard(modifier: Modifier = Modifier) {
 }
 
 fun setServiceEnabledState(context: Context, enabled: Boolean) {
-    val prefs = PreferencesManager(context)
-    prefs.isListenerEnabled = enabled
-
-    val componentName = ComponentName(context, MediaListenerService::class.java)
-    val pm = context.packageManager
-    
-    val state = if (enabled) {
-        PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-    } else {
-        PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-    }
-    
-    try {
-        pm.setComponentEnabledSetting(
-            componentName,
-            state,
-            PackageManager.DONT_KILL_APP
-        )
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    
-    val intent = Intent(context, MediaListenerService::class.java).apply {
-        action = MediaListenerService.ACTION_TOGGLE_LISTENER
-    }
-    try {
-        context.startService(intent)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
+    MediaListenerService.toggleListenerState(context, enabled)
 }
