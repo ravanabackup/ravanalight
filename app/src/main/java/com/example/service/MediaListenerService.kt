@@ -20,20 +20,13 @@ import com.example.MainActivity
 import com.example.state.MediaStateManager
 import com.example.state.PreferencesManager
 
-import android.media.session.MediaSession
 
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.MediaSession as Media3Session
-import androidx.media3.common.MediaItem
 
 class MediaListenerService : NotificationListenerService() {
 
     private var isTrackingSetup = false
     private lateinit var mediaSessionManager: MediaSessionManager
     private val registeredControllers = mutableMapOf<String, MediaController>()
-    private var mediaSession: MediaSession? = null
-    private var audioPlaybackManager: AudioPlaybackManager? = null
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         updateControllers(controllers ?: emptyList())
@@ -53,78 +46,9 @@ class MediaListenerService : NotificationListenerService() {
         super.onCreate()
         instance = this
         createNotificationChannel()
-        setupLocalMediaSession()
-        audioPlaybackManager = AudioPlaybackManager(this)
     }
 
-    private fun setupLocalMediaSession() {
-        try {
-            mediaSession = MediaSession(this, "RavanaLightSession").apply {
-                isActive = true
-                setCallback(object : MediaSession.Callback() {
-                    override fun onPlay() {
-                        triggerPlayPause()
-                    }
 
-                    override fun onPause() {
-                        triggerPlayPause()
-                    }
-
-                    override fun onSkipToNext() {
-                        triggerNext()
-                    }
-
-                    override fun onSkipToPrevious() {
-                        triggerPrevious()
-                    }
-                })
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun updateLocalSessionState(isPlaying: Boolean, title: String?, artist: String?, albumArt: Bitmap?) {
-        if (isPlaying && title != null) {
-            audioPlaybackManager?.play()
-        } else {
-            audioPlaybackManager?.pause()
-        }
-
-        val session = mediaSession ?: return
-        try {
-            if (title == null) {
-                val state = PlaybackState.Builder()
-                    .setState(PlaybackState.STATE_NONE, 0, 1.0f)
-                    .build()
-                session.setPlaybackState(state)
-                session.setMetadata(null)
-                return
-            }
-
-            val metaBuilder = MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist ?: "")
-            if (albumArt != null) {
-                metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, albumArt)
-            }
-            session.setMetadata(metaBuilder.build())
-
-            val rawState = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
-            val stateBuilder = PlaybackState.Builder()
-                .setState(rawState, 0, 1.0f)
-                .setActions(
-                    PlaybackState.ACTION_PLAY or
-                    PlaybackState.ACTION_PAUSE or
-                    PlaybackState.ACTION_PLAY_PAUSE or
-                    PlaybackState.ACTION_SKIP_TO_NEXT or
-                    PlaybackState.ACTION_SKIP_TO_PREVIOUS
-                )
-            session.setPlaybackState(stateBuilder.build())
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -149,19 +73,6 @@ class MediaListenerService : NotificationListenerService() {
     override fun onDestroy() {
         super.onDestroy()
         cleanupMediaSessionTracking()
-        try {
-            audioPlaybackManager?.release()
-            audioPlaybackManager = null
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        try {
-            mediaSession?.isActive = false
-            mediaSession?.release()
-            mediaSession = null
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
         MediaStateManager.updateServiceConnected(false)
         if (instance == this) {
             instance = null
@@ -283,7 +194,6 @@ class MediaListenerService : NotificationListenerService() {
                     packageName = ""
                 )
             )
-            updateLocalSessionState(false, null, null, null)
             val prefs = PreferencesManager(this)
             if (prefs.isListenerEnabled) {
                 showServiceNotification("No active media", "Waiting for playback...", false, null)
@@ -319,9 +229,6 @@ class MediaListenerService : NotificationListenerService() {
                 packageName = controller.packageName ?: ""
             )
         )
-
-        // Update local session state
-        updateLocalSessionState(isPlaying, title, artist, artBitmap)
 
         // Show/Update Notification
         showServiceNotification(title, artist, isPlaying, artBitmap)
@@ -419,7 +326,7 @@ class MediaListenerService : NotificationListenerService() {
         val mediaStyle = Notification.MediaStyle()
             .setShowActionsInCompactView(0, 1, 2)
 
-        val token = mediaSession?.sessionToken ?: getActiveController()?.sessionToken
+        val token = getActiveController()?.sessionToken
         if (token != null) {
             mediaStyle.setMediaSession(token)
         }
@@ -495,21 +402,6 @@ class MediaListenerService : NotificationListenerService() {
             prefs.isListenerEnabled = enabled
             
             val componentName = ComponentName(context, MediaListenerService::class.java)
-            val pm = context.packageManager
-            val state = if (enabled) {
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            } else {
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            }
-            try {
-                pm.setComponentEnabledSetting(
-                    componentName,
-                    state,
-                    PackageManager.DONT_KILL_APP
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
 
             if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 try {
@@ -538,7 +430,6 @@ class MediaListenerService : NotificationListenerService() {
                             packageName = ""
                         )
                     )
-                    srv.updateLocalSessionState(false, null, null, null)
                 }
             }
             
@@ -559,143 +450,6 @@ class MediaListenerService : NotificationListenerService() {
 
         fun skipToPreviousActiveSession() {
             instance?.triggerPrevious()
-        }
-    }
-}
-
-class AudioPlaybackManager(private val context: Context) {
-    private var exoPlayer: ExoPlayer? = null
-    private var mediaSession: Media3Session? = null
-    private val silentFile = java.io.File(context.cacheDir, "silent.wav")
-
-    init {
-        ensureSilentWavExists()
-        try {
-            exoPlayer = ExoPlayer.Builder(context).build().apply {
-                repeatMode = Player.REPEAT_MODE_ALL
-                playWhenReady = false
-                val mediaItem = MediaItem.fromUri(android.net.Uri.fromFile(silentFile))
-                setMediaItem(mediaItem)
-                prepare()
-            }
-            exoPlayer?.let { player ->
-                mediaSession = Media3Session.Builder(context, player)
-                    .setId("AppAudioSyncSession")
-                    .build()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun ensureSilentWavExists() {
-        if (!silentFile.exists()) {
-            try {
-                writeSilentWav(silentFile)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun writeSilentWav(file: java.io.File) {
-        val sampleRate = 8000
-        val durationSeconds = 1
-        val numChannels = 1
-        val bitsPerSample = 8
-        val dataSize = sampleRate * durationSeconds * numChannels * (bitsPerSample / 8)
-        val totalSize = 36 + dataSize
-        
-        val header = ByteArray(44)
-        header[0] = 'R'.code.toByte() // RIFF
-        header[1] = 'I'.code.toByte()
-        header[2] = 'F'.code.toByte()
-        header[3] = 'F'.code.toByte()
-        
-        header[4] = (totalSize and 0xff).toByte()
-        header[5] = ((totalSize shr 8) and 0xff).toByte()
-        header[6] = ((totalSize shr 16) and 0xff).toByte()
-        header[7] = ((totalSize shr 24) and 0xff).toByte()
-        
-        header[8] = 'W'.code.toByte() // WAVE
-        header[9] = 'A'.code.toByte()
-        header[10] = 'V'.code.toByte()
-        header[11] = 'E'.code.toByte()
-        
-        header[12] = 'f'.code.toByte() // fmt
-        header[13] = 'm'.code.toByte()
-        header[14] = 't'.code.toByte()
-        header[15] = ' '.code.toByte()
-        
-        header[16] = 16 
-        header[17] = 0
-        header[18] = 0
-        header[19] = 0
-        
-        header[20] = 1 
-        header[21] = 0
-        
-        header[22] = numChannels.toByte()
-        header[23] = 0
-        
-        header[24] = (sampleRate and 0xff).toByte()
-        header[25] = ((sampleRate shr 8) and 0xff).toByte()
-        header[26] = ((sampleRate shr 16) and 0xff).toByte()
-        header[27] = ((sampleRate shr 24) and 0xff).toByte()
-        
-        val byteRate = sampleRate * numChannels * bitsPerSample / 8
-        header[28] = (byteRate and 0xff).toByte()
-        header[29] = ((byteRate shr 8) and 0xff).toByte()
-        header[30] = ((byteRate shr 16) and 0xff).toByte()
-        header[31] = ((byteRate shr 24) and 0xff).toByte()
-        
-        header[32] = 1 
-        header[33] = 0
-        
-        header[34] = bitsPerSample.toByte()
-        header[35] = 0
-        
-        header[36] = 'd'.code.toByte() // data
-        header[37] = 'a'.code.toByte()
-        header[38] = 't'.code.toByte()
-        header[39] = 'a'.code.toByte()
-        
-        header[40] = (dataSize and 0xff).toByte()
-        header[41] = ((dataSize shr 8) and 0xff).toByte()
-        header[42] = ((dataSize shr 16) and 0xff).toByte()
-        header[43] = ((dataSize shr 24) and 0xff).toByte()
-        
-        java.io.FileOutputStream(file).use { outputStream ->
-            outputStream.write(header)
-            val data = ByteArray(dataSize) { 128.toByte() }
-            outputStream.write(data)
-        }
-    }
-
-    fun play() {
-        try {
-            exoPlayer?.playWhenReady = true
-            exoPlayer?.play()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun pause() {
-        try {
-            exoPlayer?.playWhenReady = false
-            exoPlayer?.pause()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun release() {
-        try {
-            mediaSession?.release()
-            exoPlayer?.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 }

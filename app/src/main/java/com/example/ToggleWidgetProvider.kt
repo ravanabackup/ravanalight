@@ -98,6 +98,7 @@ class ToggleWidgetProvider : AppWidgetProvider() {
             )
 
             views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
+            views.setOnClickPendingIntent(R.id.widget_toggle_btn, pendingIntent)
             
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
