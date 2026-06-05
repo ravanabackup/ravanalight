@@ -14,6 +14,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
+import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import com.example.MainActivity
 import com.example.state.MediaStateManager
@@ -86,6 +87,45 @@ class MediaListenerService : NotificationListenerService() {
                     cleanupMediaSessionTracking()
                     val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     manager.cancel(NOTIFICATION_ID)
+                    stopSelf()
+                }
+            } else if (action == ACTION_TOGGLE_FROM_NOTIFICATION) {
+                val enabled = !prefs.isListenerEnabled
+                prefs.isListenerEnabled = enabled
+                
+                val componentName = ComponentName(this, MediaListenerService::class.java)
+                val state = if (enabled) {
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                } else {
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                }
+                try {
+                    packageManager.setComponentEnabledSetting(
+                        componentName,
+                        state,
+                        PackageManager.DONT_KILL_APP
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                if (enabled) {
+                    setupMediaSessionTracking()
+                    updateActiveSession()
+                } else {
+                    cleanupMediaSessionTracking()
+                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    manager.cancel(NOTIFICATION_ID)
+                    
+                    MediaStateManager.updateMediaInfo(
+                        MediaStateManager.MediaInfo(
+                            title = "No active media",
+                            artist = "Waiting for playback...",
+                            isPlaying = false,
+                            albumArt = null,
+                            packageName = ""
+                        )
+                    )
                     stopSelf()
                 }
             } else {
@@ -256,6 +296,13 @@ class MediaListenerService : NotificationListenerService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val toggleIntent = PendingIntent.getService(
+            this,
+            4,
+            Intent(this, MediaListenerService::class.java).apply { action = ACTION_TOGGLE_FROM_NOTIFICATION },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val contentIntent = PendingIntent.getActivity(
             this,
             0,
@@ -303,9 +350,20 @@ class MediaListenerService : NotificationListenerService() {
                 android.R.drawable.ic_media_next, "Next", nextIntent
             ).build()
         )
+        builder.addAction(
+            Notification.Action.Builder(
+                android.R.drawable.ic_menu_close_clear_cancel, "Turn Off", toggleIntent
+            ).build()
+        )
 
         val mediaStyle = Notification.MediaStyle()
             .setShowActionsInCompactView(0, 1, 2)
+
+        val controller = getActiveController()
+        if (controller != null) {
+            mediaStyle.setMediaSession(controller.sessionToken)
+        }
+
         builder.setStyle(mediaStyle)
 
         val notification = builder.build()
@@ -368,6 +426,7 @@ class MediaListenerService : NotificationListenerService() {
         const val ACTION_PREV = "com.amazon.mp3.ACTION_PREV"
         const val ACTION_NEXT = "com.amazon.mp3.ACTION_NEXT"
         const val ACTION_TOGGLE_LISTENER = "com.amazon.mp3.ACTION_TOGGLE_LISTENER"
+        const val ACTION_TOGGLE_FROM_NOTIFICATION = "com.amazon.mp3.ACTION_TOGGLE_FROM_NOTIFICATION"
 
         private var instance: MediaListenerService? = null
 
