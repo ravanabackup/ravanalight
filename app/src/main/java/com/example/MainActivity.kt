@@ -1263,15 +1263,7 @@ fun setServiceEnabledState(context: Context, enabled: Boolean) {
         action = MediaListenerService.ACTION_TOGGLE_LISTENER
     }
     try {
-        if (enabled) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        } else {
-            context.startService(intent)
-        }
+        context.startService(intent)
     } catch (e: Exception) {
         e.printStackTrace()
     }

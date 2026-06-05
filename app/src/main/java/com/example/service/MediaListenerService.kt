@@ -84,7 +84,8 @@ class MediaListenerService : NotificationListenerService() {
                     setupMediaSessionTracking()
                 } else {
                     cleanupMediaSessionTracking()
-                    stopForeground(true)
+                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    manager.cancel(NOTIFICATION_ID)
                     stopSelf()
                 }
             } else {
@@ -228,8 +229,9 @@ class MediaListenerService : NotificationListenerService() {
 
     private fun showServiceNotification(title: String, artist: String, isPlaying: Boolean, albumArt: Bitmap?) {
         val prefs = PreferencesManager(this)
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (!prefs.isListenerEnabled) {
-            stopForeground(true)
+            manager.cancel(NOTIFICATION_ID)
             return
         }
 
@@ -308,15 +310,7 @@ class MediaListenerService : NotificationListenerService() {
 
         val notification = builder.build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        manager.notify(NOTIFICATION_ID, notification)
     }
 
     private fun createNotificationChannel() {
