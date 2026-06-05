@@ -268,6 +268,16 @@ class MediaListenerService : NotificationListenerService() {
         val prefs = PreferencesManager(this)
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (!prefs.isListenerEnabled) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             manager.cancel(NOTIFICATION_ID)
             return
         }
@@ -325,6 +335,7 @@ class MediaListenerService : NotificationListenerService() {
             .setContentTitle(title)
             .setContentText(artist)
             .setOngoing(true)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
             .setContentIntent(contentIntent)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
 
@@ -365,7 +376,16 @@ class MediaListenerService : NotificationListenerService() {
 
         val notification = builder.build()
 
-        manager.notify(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            manager.notify(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotificationChannel() {

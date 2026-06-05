@@ -18,7 +18,13 @@ class AudioPlaybackManager(private val context: Context) {
     init {
         ensureSilentWavExists()
         try {
+            val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
+                .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                .setContentType(androidx.media3.common.C.CONTENT_TYPE_MUSIC)
+                .build()
+
             exoPlayer = ExoPlayer.Builder(context).build().apply {
+                setAudioAttributes(audioAttributes, true)
                 repeatMode = Player.REPEAT_MODE_ALL
                 playWhenReady = false
                 val mediaItem = MediaItem.Builder()
@@ -43,10 +49,14 @@ class AudioPlaybackManager(private val context: Context) {
 
     private fun initializeMediaSession(player: ExoPlayer) {
         try {
-            // Build the Media3 media session. The OS listens to this session lifecycle.
+            // Build the media session. The OS listens to this session lifecycle.
             mediaSession = MediaSession.Builder(context, player)
                 .setId("AppAudioSyncSession")
                 .build()
+                
+            // Explicitly enforce playback configurations
+            player.repeatMode = Player.REPEAT_MODE_ALL
+            player.playWhenReady = true
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -57,6 +67,8 @@ class AudioPlaybackManager(private val context: Context) {
             exoPlayer?.let { player ->
                 player.setMediaItem(mediaItem)
                 player.prepare()
+                
+                // As playback begins, the OS intercepts the state to flash the Dynamic Light
                 player.play()
             }
         } catch (e: Exception) {
@@ -96,6 +108,13 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     private fun ensureSilentWavExists() {
+        try {
+            if (silentFile.exists()) {
+                silentFile.delete() // Force regeneration of the active inaudible sub-bass file
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         if (!silentFile.exists()) {
             try {
                 writeSilentWav(silentFile)
@@ -174,7 +193,15 @@ class AudioPlaybackManager(private val context: Context) {
         
         FileOutputStream(file).use { outputStream ->
             outputStream.write(header)
-            val data = ByteArray(dataSize) { 128.toByte() }
+            val data = ByteArray(dataSize)
+            for (i in 0 until dataSize) {
+                // Generates an 18Hz sub-bass frequency oscillating around 128 with full amplitude (120)
+                // Phone speakers cannot physically reproduce 18Hz, so it is 100% silent, but has high energy for visualizers
+                val angle = 2.0 * Math.PI * 18.0 * i.toDouble() / sampleRate.toDouble()
+                val sineValue = Math.sin(angle)
+                val byteVal = (128 + (120.0 * sineValue)).toInt().coerceIn(0, 255).toByte()
+                data[i] = byteVal
+            }
             outputStream.write(data)
         }
     }
