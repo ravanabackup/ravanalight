@@ -13,7 +13,7 @@ android {
   defaultConfig {
     applicationId = "com.amazon.mp3"
     minSdk = 24
-    targetSdk = 34
+    targetSdk = 36
     versionCode = 1
     versionName = "1.0"
 
