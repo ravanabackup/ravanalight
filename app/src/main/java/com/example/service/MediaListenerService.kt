@@ -541,6 +541,12 @@ class MediaListenerService : NotificationListenerService() {
                     srv.updateLocalSessionState(false, null, null, null)
                 }
             }
+            
+            try {
+                com.example.ToggleWidgetProvider.updateAllWidgets(context)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         fun playPauseActiveSession() {
