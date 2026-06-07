@@ -37,18 +37,6 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
-
-        <receiver
-            android:name=".ToggleWidgetProvider"
-            android:exported="true"
-            android:label="Dynamic Light Toggle">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/toggle_widget_info" />
-        </receiver>
     </application>
 
 </manifest>
